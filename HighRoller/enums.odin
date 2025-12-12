@@ -1,0 +1,29 @@
+package HighRoller
+
+Texture_Type :: enum {
+	DIFFUSE,
+	SPECULAR,
+}
+
+Winding_Order :: enum {
+        CLOCKWISE,
+        COUNTER_CLOCKWISE,
+}
+
+Player_State :: enum u32 {
+        WALKING = 5,
+        STANDING = 2,
+}
+
+Light_Type :: enum {
+        DIRECTIONAL,
+        POINT,
+}
+
+MODEL_SHADER := "MODEL_SHADER"
+MESH_SHADER := "MESH_SHADER"
+MODEL_SHADOW_SHADER := "MODEL_SHADOW_SHADER"
+MESH_SHADOW_SHADER := "MESH_SHADOW_SHADER"
+MESH_COLOR_ID_SHADER := "MESH_COLOR_ID_SHADER"
+MODEL_COLOR_ID_SHADER := "MODEL_COLOR_ID_SHADER"
+
