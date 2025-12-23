@@ -18,6 +18,13 @@ import os "core:os/os2"
 import "core:math"
 import "core:math/rand"
 import "core:slice"
+
+WIDTH :f32: 800.0
+HEIGHT :f32: 600.0
+CAMERA_NEAR :f32: 0.03
+FOV :f32: 90
+UP :: [3]f32{0, 1, 0}
+
 // MAIN GAME LOOP //////////////////////////////////////
 run_game :: proc() {
 	rc := init_render_context(800, 600, "High Roller")
@@ -40,7 +47,8 @@ run_game :: proc() {
 	load_shaders(rc)
 	camera := init_camera(800, 600)
 	key_state := init_key_state(rc)
-	player := init_player("../resources/models/voxel/Voxel character.fbx", "../resources/models/voxel/Voxel character.fbx", rc)
+        key_state.can_select = true
+	player := create_player("../resources/models/voxel/Voxel character.fbx", "../resources/models/voxel/Voxel character.fbx", rc)
 	scene := init_scene(&camera, &player, rc)
 
 
@@ -71,9 +79,10 @@ init_camera :: proc(width, height: f32
 ) -> Camera
 {
 	camera := Camera{}
-	camera.pos = {-1, 15, 1}
+	camera.pos = {-15, 5, 1}
 	camera.view_transform = glm.mat4LookAt(camera.pos, {0,0,0}, {0,1,0})
-        camera.perspective_transform = glm.mat4Perspective(glm.radians_f32(60), 800/600, 0.03, 2000)
+        camera.perspective_transform = glm.mat4Perspective(glm.radians_f32(90), 800/600, CAMERA_NEAR, 2000)
+        serialize_camera(camera)
 	return camera
 }
 
@@ -97,13 +106,19 @@ init_scene :: proc(camera: ^Camera, player: ^Player, rc: ^Render_Context
 {
         scene := new(Scene)
         // TODO figure out the hidden specifics of assigning these arrays
-        scene.objects = make([dynamic]^Object)
+        scene.objects = make([dynamic]Object)  // TODO resize
         scene.lights = make(#soa[dynamic]Light, 1)
         scene.color_id_map = make(map[Color_ID]Selectable)
+        scene.enemies = make([dynamic]^Enemy)
 
         scene.player = player
         scene.color_id_map[player.model.color_id] = player
         scene.camera = camera
+
+	enemy := create_enemy("../resources/models/voxel/Voxel character.fbx", "../resources/models/voxel/Voxel character.fbx", {15, 1, 0}, rc)
+        append(&scene.enemies, enemy)
+        scene.color_id_map[enemy.model.color_id] = scene.enemies[len(scene.enemies)-1]
+
 
         // create the ground
         rc.textures["ground_d"] = new(Texture)
@@ -111,8 +126,11 @@ init_scene :: proc(camera: ^Camera, player: ^Player, rc: ^Render_Context
         rc.textures["ground_d"].type = .DIFFUSE
         ground_textures: [1]^Texture = {rc.textures["ground_d"]}
         plane := load_plane(ground_textures[:], {0,-1,0}, 0, 10, rc)
+        plane.collider = new(Collider)
+        plane.collider^ = Plane_Collider{x=10, z=10, normal=[3]f32{0, 1, 0}, binormal = [3]f32{1, 0, 0}}
         append(&scene.objects, plane)
-        scene.color_id_map[plane.color_id] = plane
+        scene.color_id_map[plane.color_id] = &scene.objects[len(scene.objects)-1]
+
         scene_clear_lights(scene, rc)
         vert := CUBE_VERTICES
         scene_add_light(scene, Light{
@@ -171,6 +189,24 @@ update_gui :: proc(rc: ^Render_Context, io: ^im.IO, scene: ^Scene, gui: ^GUI)
                 if im.Button("Add Plane") {
                         scene_add_plane(scene, rc, "DEBUG/Orange/texture_02.png")
                 }
+                #partial switch v in scene.selected {
+                case ^Object: {
+                        #partial switch v.type {
+                        case .Collider: 
+                        {
+                                if im.Button("Make Visible Object") {
+                                        v.type = .Mesh
+                                }
+                        }
+                        case .Mesh: 
+                        {
+                                if im.Button("Make Collider Only") {
+                                        v.type = .Collider
+                                }
+                        }
+                        }
+                }
+                }
 
                 if im.BeginCombo("Texture", gui.selected_texture) {
                         for texture in gui.texture_files {
@@ -199,18 +235,102 @@ update_gui :: proc(rc: ^Render_Context, io: ^im.IO, scene: ^Scene, gui: ^GUI)
 
 update_scene :: proc(scene: ^Scene, key_state: ^Key_State, dt: f64, rc: ^Render_Context)
 {
-        update_player(scene.player, key_state, dt, rc)
+        if !scene.edit {
+                update_player(scene.player, scene.camera, key_state, dt, rc, scene.edit)
+
+                for enemy in scene.enemies {
+                        update_enemy(enemy, scene, dt, rc)
+                }
+        }
         scene_read_input(scene, key_state, dt)
+        scene_check_collisions(scene, dt)
+        if !scene.edit {
+                glfw.SetInputMode(rc.glfw_window, glfw.CURSOR, glfw.CURSOR_DISABLED)
+        } else {
+                glfw.SetInputMode(rc.glfw_window, glfw.CURSOR, glfw.CURSOR_NORMAL)
+
+        }
         update_camera(scene, key_state, dt)
 }
 
+scene_check_collisions :: proc(scene: ^Scene, dt: f64)
+{
+        // For now just check collisions with the player
+        // TODO multi thread with a mutex on the player position
+        player := scene.player
+        new_pos, on_ground, should_update := check_sphere_collisions(player.pos, player.collider, scene, dt)
+        if should_update {
+                player.pos = new_pos
+        } 
+        if on_ground {
+                player.velocity.y = 0
+                player.on_ground = true
+        }
+        for enemy in scene.enemies {
+                new_pos, on_ground, should_update = check_sphere_collisions(enemy.pos, enemy.collider, scene, dt)
+                if should_update {
+                        enemy.pos = new_pos
+                }
+                if on_ground {
+                        enemy.velocity.y = 0
+                        enemy.on_ground = true
+                }
+        }
 
+
+}
+
+check_sphere_collisions :: proc(pos: [3]f32, sphere_coll: Sphere_Collider, scene: ^Scene, dt: f64,
+) -> ([3]f32, bool, bool) 
+{
+        collider_pos := pos + {0, sphere_coll.radius, 0}
+        should_update: bool
+        on_ground: bool
+        pos := pos
+
+        for object in scene.objects {
+                if object.collider != nil {
+                        switch collider in object.collider^ {
+                        case Box_Collider: {}
+                        case Capsule_Collider: {}
+                        case Sphere_Collider: {}
+                        case Plane_Collider: {
+                                vector := collider_pos - object.pos
+                                // Transform into an orthonormal basis
+                                n := (glm.mat4FromQuat(object.rot) * [4]f32{collider.normal.x, collider.normal.y, collider.normal.z, 0}).xyz
+                                b := (glm.mat4FromQuat(object.rot) * [4]f32{collider.binormal.x, collider.binormal.y, collider.binormal.z, 0}).xyz
+                                t := glm.cross(n, b)
+                                ortho_transform := glm.transpose(matrix[3,3]f32{
+                                        b.x, n.x, t.x,
+                                        b.y, n.y, t.y,
+                                        b.z, n.z, t.z,
+                                })
+                                coll_plane := ortho_transform * vector // convert player position into plane coordinates
+                                closest_z := clamp(coll_plane.z, -collider.z, collider.z)
+                                closest_x := clamp(coll_plane.x, -collider.x, collider.x)
+                                closest := [3]f32{closest_x, 0, closest_z} // closest point on plane in plane coordinates in plane coordinates
+                                dist := glm.distance(closest, coll_plane)
+                                if dist < sphere_coll.radius {
+                                        // Translate from plane coordinates back to world coordinates and then repulse
+                                        to_move := glm.transpose(ortho_transform) * glm.normalize(coll_plane-closest) * (sphere_coll.radius-dist)
+                                        pos += to_move
+                                        if abs(glm.dot(n, UP)) > 0.7 && glm.dot(to_move, UP) > 0{
+                                               on_ground = true 
+                                        }
+                                        should_update = true
+                                }
+                        }
+                        }
+                }
+        }
+        return pos, on_ground, should_update
+}
 
 update_camera :: proc(scene: ^Scene, key_state: ^Key_State, dt: f64)
 {
-        MOUSE_SENSITIVITY :: 0.5
+        MOUSE_SENSITIVITY :: 0.1
         // TODO optimise
-        if key_state.right_mouse_down {
+        if !scene.camera.free || (key_state.right_mouse_down && scene.camera.free) {
                 scene.camera.yaw += key_state.x_offset * MOUSE_SENSITIVITY
                 scene.camera.pitch -= key_state.y_offset * MOUSE_SENSITIVITY
                 key_state.x_offset = 0
@@ -221,24 +341,27 @@ update_camera :: proc(scene: ^Scene, key_state: ^Key_State, dt: f64)
                         math.sin(math.to_radians(scene.camera.pitch)),
                         math.sin(math.to_radians(scene.camera.yaw)) * math.cos(math.to_radians(scene.camera.pitch))
                 })
-                scene.camera.right = glm.normalize(glm.cross(scene.camera.front, [3]f32{0, 1, 0}))
+                scene.camera.right = glm.normalize(glm.cross(scene.camera.front, UP))
                 scene.camera.up = glm.normalize(glm.cross(scene.camera.right, scene.camera.front))
-                scene.camera.view_transform = glm.mat4LookAt(scene.camera.pos, scene.camera.pos + scene.camera.front, {0, 1, 0})
+        } 
+        if scene.camera.free {
+                CAMERA_SPEED :: 10
+                if key_state.d {
+                        scene.camera.pos = scene.camera.pos + scene.camera.right * CAMERA_SPEED * f32(dt)
+                }
+                if key_state.a {
+                        scene.camera.pos = scene.camera.pos - scene.camera.right * CAMERA_SPEED * f32(dt)
+                }
+                if key_state.w {
+                        scene.camera.pos = scene.camera.pos + scene.camera.front * CAMERA_SPEED * f32(dt)
+                }
+                if key_state.s {
+                        scene.camera.pos = scene.camera.pos - scene.camera.front * CAMERA_SPEED * f32(dt)
+                }
+        } else {
+                scene.camera.pos = scene.player.pos + {0, 2, 0}
         }
-        CAMERA_SPEED :: 10
-        if key_state.d {
-                scene.camera.pos = scene.camera.pos + scene.camera.right * CAMERA_SPEED * f32(dt)
-        }
-        if key_state.a {
-                scene.camera.pos = scene.camera.pos - scene.camera.right * CAMERA_SPEED * f32(dt)
-        }
-        if key_state.w {
-                scene.camera.pos = scene.camera.pos + scene.camera.front * CAMERA_SPEED * f32(dt)
-        }
-        if key_state.s {
-                scene.camera.pos = scene.camera.pos - scene.camera.front * CAMERA_SPEED * f32(dt)
-        }
-        // scene.camera.view_transform = glm.mat4LookAt(scene.camera.pos, scene.player.position, {0,1,0})
+        scene.camera.view_transform = glm.mat4LookAt(scene.camera.pos, scene.camera.pos + scene.camera.front, UP)
 }
 
 
@@ -250,9 +373,14 @@ pre_process :: proc(scene: ^Scene, rc: ^Render_Context)
         new_encoder(rc, shadow_render_pass_options)
         set_render_pipeline_state(MODEL_SHADOW_SHADER, rc)
         write_model_to_shadow_map(scene.player.model, rc, scene.player.model.transform_buffer, rc.shadow_map)
+        for enemy in scene.enemies {
+                write_model_to_shadow_map(enemy.model, rc, enemy.model.transform_buffer, rc.shadow_map)
+        }
         set_render_pipeline_state(MESH_SHADOW_SHADER, rc)
         for object in scene.objects {
-                write_object_to_shadow_map(object, rc, rc.shadow_map)
+                if object.type != .Collider {
+                        write_object_to_shadow_map(object, rc, rc.shadow_map)
+                }
         }
         rc.draw_stage.encoder->endEncoding()
         end_render_pass(rc, present=false)
@@ -271,9 +399,14 @@ pre_process :: proc(scene: ^Scene, rc: ^Render_Context)
         new_encoder(rc, default_render_pass_options)
         set_render_pipeline_state(MODEL_COLOR_ID_SHADER, rc)
         write_model_to_color_id(scene.player.model, scene.player.model.transform_buffer, camera_buffer, rc)
+        for enemy in scene.enemies {
+                write_model_to_color_id(enemy.model, enemy.model.transform_buffer, camera_buffer, rc)
+        }
         set_render_pipeline_state(MESH_COLOR_ID_SHADER, rc)
         for object in scene.objects {
-                write_object_to_color_id(object, camera_buffer, rc)
+                if object.type != .Collider || scene.edit {
+                        write_object_to_color_id(object, camera_buffer, rc)
+                }
         }
         rc.draw_stage.encoder->endEncoding()
         end_render_pass(rc, present=false)
@@ -295,34 +428,46 @@ render_scene :: proc(scene: ^Scene, rc: ^Render_Context, options: Render_Pass_Op
 
         // Render Player
         set_render_pipeline_state(MODEL_SHADER, rc)
-	// TODO fix this so it's not in the camera buffer
-	camera_data.world_transform = scene.player.transform
-	camera_data.normal_transform = glm.transpose(glm.inverse_matrix4x4(scene.player.transform))
-        camera_buffer->didModifyRange(NS.Range_Make(0, size_of(Camera)))
 
 	rc.draw_stage.encoder->setVertexBuffer(buffer=camera_buffer, offset=0, index=6)
 	rc.draw_stage.encoder->setFragmentBuffer(buffer=camera_buffer, offset=0, index=0)
 	rc.draw_stage.encoder->setFragmentBuffer(buffer=scene.light_buffer, offset=0, index=1)
 
-        // Is the player selected?
-        options_buffer := rc.device->newBufferWithLength(size_of(Render_Arguments), {.StorageModeManaged})
-        defer options_buffer->release()
-        options := options_buffer->contentsAsType(Render_Arguments)
-        options.selected = scene.selected == scene.player ? 1 : 0
-        options_buffer->didModifyRange(NS.Range_Make(0, size_of(Render_Arguments)))
-        rc.draw_stage.encoder->setFragmentBuffer(buffer=options_buffer, offset=0, index=8)
-        render_model(camera_buffer, scene.light_buffer, scene.player.model, rc)
+        if scene.edit {
+                // Is the player selected?
+                options_buffer := rc.device->newBufferWithLength(size_of(Render_Arguments), {.StorageModeManaged})
+                defer options_buffer->release()
+                options := options_buffer->contentsAsType(Render_Arguments)
+                options.selected = scene.selected == scene.player ? 1 : 0
+                options_buffer->didModifyRange(NS.Range_Make(0, size_of(Render_Arguments)))
+                rc.draw_stage.encoder->setFragmentBuffer(buffer=options_buffer, offset=0, index=8)
+                render_model(camera_buffer, scene.light_buffer, scene.player.model, rc)
+
+        }
+
+        for enemy in scene.enemies {
+                // Create render options buffer
+                options_buffer := rc.device->newBufferWithLength(size_of(Render_Arguments), {.StorageModeManaged})
+                defer options_buffer->release()
+                options := options_buffer->contentsAsType(Render_Arguments)
+                options.selected = scene.selected == enemy ? 1 : 0
+                options_buffer->didModifyRange(NS.Range_Make(0, size_of(Render_Arguments)))
+                rc.draw_stage.encoder->setFragmentBuffer(buffer=options_buffer, offset=0, index=8)
+                render_model(camera_buffer, scene.light_buffer, enemy.model, rc)
+        }
 
         set_render_pipeline_state(MESH_SHADER, rc)
         // Set up the shadow map
         rc.draw_stage.encoder->setFragmentTexture(rc.shadow_map.texture, 2)
         rc.draw_stage.encoder->setFragmentBuffer(buffer=rc.shadow_map.transform, offset=0, index=3)
-        for object in scene.objects {
-                // is this object selected? TODO find a way to do this without creating a new buffer each object
+        for &object in scene.objects {
+                if object.type == .Collider && !scene.edit {
+                        continue
+                }
                 options_buffer := rc.device->newBufferWithLength(size_of(Render_Arguments), {.StorageModeManaged})
                 defer options_buffer->release()
                 options := options_buffer->contentsAsType(Render_Arguments)
-                options.selected = scene.selected == object ? 1 : 0
+                options.selected = scene.selected == &object ? 1 : 0
                 options_buffer->didModifyRange(NS.Range_Make(0, size_of(Render_Arguments)))
                 rc.draw_stage.encoder->setFragmentBuffer(buffer=options_buffer, offset=0, index=8)
 
@@ -334,7 +479,22 @@ render_scene :: proc(scene: ^Scene, rc: ^Render_Context, options: Render_Pass_Op
                 rc.draw_stage.encoder->setVertexBuffer(buffer=transforms, offset=0, index=7)
                 render_mesh(camera_buffer, scene.light_buffer, object.mesh, rc.draw_stage.encoder)
         }
+        if scene.edit {
+                mesh := scene.player.collider.mesh
+                rc.draw_stage.encoder->setFragmentTexture(mesh.textures[0].value, 0)
+                translation := glm.mat4Translate(scene.player.pos + {0, 1, 0}) * glm.mat4Scale(scene.player.collider.radius)
+                transforms := rc.device->newBuffer(size_of(Vertex_Transforms), {.StorageModeManaged})
+                defer transforms->release()
+                transform_data := transforms->contentsAsType(Vertex_Transforms)
+                transform_data.transform = translation
+                transform_data.normal_transform = glm.transpose(glm.inverse_matrix4x4(translation))
+                rc.draw_stage.encoder->setVertexBuffer(buffer=transforms, offset=0, index=7)
+                render_mesh(camera_buffer, scene.light_buffer, mesh, rc.draw_stage.encoder)
+        }
+
+
         rc.draw_stage.encoder->endEncoding()
+        
 }
 
 
@@ -384,50 +544,109 @@ scene_add_plane :: proc(scene: ^Scene, rc: ^Render_Context, texture: string)
         plane_textures: [1]^Texture = {rc.textures[texture]}
         rotation: quaternion128 = quaternion(real=0, imag=0, kmag=1, jmag=0)
         plane := load_plane(plane_textures[:], {0,0,0}, rotation, 10, rc)
+        plane.collider = new(Collider)
+        plane.collider^ = Plane_Collider{x=10, z=10, normal=[3]f32{0, 1, 0}, binormal = [3]f32{1, 0, 0}}
         append(&scene.objects, plane)
-        scene.color_id_map[plane.color_id] = scene.objects[len(scene.objects)]
-        scene.selected = plane
+        scene.color_id_map[plane.color_id] = &scene.objects[len(scene.objects)-1]
+        scene.selected = &scene.objects[len(scene.objects)-1]
 }
 
 
 
 scene_read_input :: proc(scene: ^Scene, key_state: ^Key_State, dt: f64)
 {
+        if key_state.escape && key_state.shift {
+                os.exit(1)
+        } else if key_state.escape {
+                key_state.escape = false
+                scene.camera.free = !scene.camera.free
+                scene.edit = !scene.edit
+                serialize_scene(scene)
+        }
+        if !scene.edit {
+                return 
+        }
         direction: [3]f32
-	if key_state.left {
-		direction.x -= 1
-	}
-	if key_state.right {
-		direction.x += 1
-	}
-	if key_state.up {
-		direction.z -= 1
-	}
-	if key_state.down {
-		direction.z += 1
-	}
-	direction = glm.normalize(direction)
+        if key_state.left_mouse_down && key_state.mouse_moved && scene.selected != nil {
+                dist: f32
+                switch thing in scene.selected {
+                        case ^Object: {
+                                dist = glm.distance(thing.pos, scene.camera.pos)
+                                fmt.println(key_state.x_offset, key_state.y_offset, thing.pos.x)
+                        }
+                        case ^Player: {
+                                dist = glm.distance(thing.pos, scene.camera.pos)
+                        }
+                        case ^Enemy: {
+                                dist = glm.distance(thing.pos, scene.camera.pos)
+                        }
+                }
+                screen_width := 2*CAMERA_NEAR * math.tan(math.to_radians(FOV)/2) // The world space screen width
+                true_x_offset := key_state.x_offset * screen_width / WIDTH // world space x_offset
+                x_move := dist * true_x_offset / CAMERA_NEAR
+                true_y_offset := key_state.y_offset * screen_width / WIDTH // use same scaling as width
+                y_move := dist * true_y_offset / CAMERA_NEAR
+                direction = -scene.camera.up * y_move + scene.camera.right * x_move
+        }
+	// if key_state.left {
+	// 	direction.x -= 1
+	// }
+	// if key_state.right {
+	// 	direction.x += 1
+	// }
+	// if key_state.up {
+	// 	direction.z -= 1
+	// }
+	// if key_state.down {
+	// 	direction.z += 1
+	// }
+        // if key_state.space {
+        //         direction.y += 1
+        // }
+        // if key_state.shift {
+        //         direction.y -= 1
+        // }
+	//direction = glm.normalize(direction) 
 	if glm.dot(direction, direction) > 0 {
                 switch thing in scene.selected {
                 case ^Object: {
-                        pos := thing.pos + direction * f32(dt) * 7
+                        pos := thing.pos + direction
                         rot := thing.rot
                         scale := thing.scale
                         thing.pos = pos
                         thing.transform = glm.mat4Translate(pos) * glm.mat4FromQuat(rot) * glm.mat4Scale(scale)
+
                 }
                 case ^Player: {
-                        pos := thing.position + direction * f32(dt) * 7
-                        rot := thing.rotation
+                        pos := thing.pos + direction
+                        rot := thing.rot
                         scale := thing.scale
-                        thing.position = pos
-                        thing.transform = glm.mat4Translate(pos) * rot * glm.mat4Scale(scale)
+                        thing.pos = pos
+                        thing.transform = glm.mat4Translate(pos) * glm.mat4FromQuat(rot) * glm.mat4Scale(scale)
+                        transform_data := thing.model.transform_buffer->contentsAsType(Vertex_Transforms)
+                        transform_data.transform = thing.transform
+                        transform_data.normal_transform = glm.transpose(glm.inverse_matrix4x4(thing.transform))
+                        thing.model.transform_buffer->didModifyRange(NS.Range_Make(0, size_of(Vertex_Transforms)))
+
+                }
+                case ^Enemy: {
+                        pos := thing.pos + direction
+                        rot := thing.rot
+                        scale := thing.scale
+                        thing.pos = pos
+                        thing.transform = glm.mat4Translate(pos) * glm.mat4FromQuat(rot) * glm.mat4Scale(scale)
+                        transform_data := thing.model.transform_buffer->contentsAsType(Vertex_Transforms)
+                        transform_data.transform = thing.transform
+                        transform_data.normal_transform = glm.transpose(glm.inverse_matrix4x4(thing.transform))
+                        thing.model.transform_buffer->didModifyRange(NS.Range_Make(0, size_of(Vertex_Transforms)))
                 }
                 }
         }
-        if key_state.left_mouse_down {
+        if key_state.left_mouse_down && key_state.can_select {
                 scene.selected = find_object_under_mouse(scene, key_state)
+                key_state.can_select = false
         }
+        key_state.mouse_moved = false
 }
 
 find_object_under_mouse :: proc(scene: ^Scene, key_state: ^Key_State
@@ -462,8 +681,14 @@ scene_update_transform :: proc(scene: ^Scene)
         }
         case ^Player: {
                 thing.transform =
-                        glm.mat4Translate(thing.position) *
-                        thing.rotation *
+                        glm.mat4Translate(thing.pos) *
+                        glm.mat4FromQuat(thing.rot) *
+                        glm.mat4Scale(thing.scale)
+        }
+        case ^Enemy: {
+                thing.transform =
+                        glm.mat4Translate(thing.pos) *
+                        glm.mat4FromQuat(thing.rot) *
                         glm.mat4Scale(thing.scale)
         }
         }
@@ -476,7 +701,7 @@ scene_update_rotation :: proc(scene: ^Scene, gui: ^GUI)
         fmt.println("rotating", scene.selected)
         switch thing in scene.selected {
         case ^Object: {
-                thing.rot = glm.quatAxisAngle({0, 0, 1}, gui.roll) *
+                thing.rot =     glm.quatAxisAngle({0, 0, 1}, gui.roll) *
                                 glm.quatAxisAngle({0, 1, 0}, gui.pitch) *
                                 glm.quatAxisAngle({1, 0, 0}, gui.yaw)
 
@@ -486,7 +711,24 @@ scene_update_rotation :: proc(scene: ^Scene, gui: ^GUI)
                 glm.mat4Scale(thing.scale)
         }
         case ^Player: {
-                unimplemented("Add handling for rotatin models")
+                thing.rot =     glm.quatAxisAngle({0, 0, 1}, gui.roll) *
+                                glm.quatAxisAngle({0, 1, 0}, gui.pitch) *
+                                glm.quatAxisAngle({1, 0, 0}, gui.yaw)
+
+                thing.transform =
+                glm.mat4Translate(thing.pos) *
+                glm.mat4FromQuat(thing.rot) *
+                glm.mat4Scale(thing.scale)
+        }
+        case ^Enemy: {
+                thing.rot =     glm.quatAxisAngle({0, 0, 1}, gui.roll) *
+                                glm.quatAxisAngle({0, 1, 0}, gui.pitch) *
+                                glm.quatAxisAngle({1, 0, 0}, gui.yaw)
+
+                thing.transform =
+                glm.mat4Translate(thing.pos) *
+                glm.mat4FromQuat(thing.rot) *
+                glm.mat4Scale(thing.scale)
         }
         }
         
@@ -511,8 +753,10 @@ scene_update_texture :: proc(scene: ^Scene, texture_path: cstring, rc: ^Render_C
                 }
         }
         case ^Player: {
-                unimplemented("Implement texture loading for models")
+                return // Not allowed  
+        }
+        case ^Enemy: {
+                return // Not allowed
         }
         }
-
 }

@@ -9,6 +9,11 @@ struct Camera_Data {
         float3 pos;
 };
 
+struct Vertex_Transforms {
+        float4x4 transform;
+        float4x4 normal_transform;
+};
+
 vertex float4 vertex_main(
         device const packed_float3*     position        [[buffer(0)]],
         device const float4x4&          world_from_obj  [[buffer(4)]],

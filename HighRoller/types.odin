@@ -27,6 +27,8 @@ Render_Context :: struct {
 	textures:      map[string]^Texture,
 	draw_stage:    Draw_Stage,
 	shadow_map:    Shadow_Map,
+        width:         i32,
+        height:        i32,
 }
 
 Draw_Stage :: struct {
@@ -60,6 +62,8 @@ Key_State :: struct {
 	left, right, up, down: bool,
         a, d, w, s:            bool,
         space:                 bool,
+        shift:                 bool,
+        escape:                bool,
 	left_mouse_down:       bool,
 	left_mouse_drag:       bool,
         right_mouse_down:      bool,
@@ -68,6 +72,8 @@ Key_State :: struct {
 	delete:                bool,
         x_offset:              f32,
         y_offset:              f32,
+        mouse_moved:           bool,
+        can_select:            bool,
 }
 
 Camera :: struct #align (16) {
@@ -81,6 +87,7 @@ Camera :: struct #align (16) {
         front:                 [3]f32,
         right:                 [3]f32,
         up:                    [3]f32,
+        free:                  bool,
 }
 
 MAX_BONE_INFLUENCE :: 4
@@ -101,14 +108,19 @@ Mesh :: struct {
 
 Object :: struct {
         mesh: Mesh,
-        collider: Collider,
+        collider: ^Collider,
         transform: matrix[4,4]f32,
-        pos: [3]f32,
-        rot: quaternion128, 
-        scale: f32,
+        using world_pos: World_Pos,
         color_id: Color_ID,
+        type: Object_Type
 }
 
+Object_Type :: enum {
+        Collider,
+        Mesh,
+        Model,
+        Animated_Model,
+}
 // A model is just an object that has animation
 Model :: struct {
 	meshes:                 [dynamic]Mesh,
@@ -124,12 +136,13 @@ Player :: struct {
 	model:      ^Model,
 	animator:   ^Animator,
 	animations: []Animation,
-	position:   [3]f32,
 	state:      Player_State,
 	transform:  matrix[4, 4]f32,
-	rotation:   matrix[4, 4]f32,
-	scale:      f32,
+        using world_pos: World_Pos,
 	speed:      f32,
+        collider:   Sphere_Collider,
+        velocity:   [3]f32,
+        on_ground:  bool,
 }
 
 Bone_Info :: struct {
@@ -195,17 +208,37 @@ Light :: struct {
 Scene :: struct {
         camera:   ^Camera,
 	player:   ^Player,
-	enemies:  []^Enemy,
-	objects:  [dynamic]^Object,
+	enemies:  [dynamic]^Enemy,
+	objects:  [dynamic]Object,
 	lights:   #soa[dynamic]Light,
 	light_buffer: ^MTL.Buffer,
         selected: Selectable,
         color_id_texture: ^MTL.Texture,
-        color_id_map: map[Color_ID]Selectable
+        color_id_map: map[Color_ID]Selectable,
+        edit: bool,
 }
 
-Enemy :: struct {}
-Collider :: struct {}
+Collider :: union {
+        Capsule_Collider,
+        Sphere_Collider,
+        Box_Collider,
+        Plane_Collider,
+}
+
+Capsule_Collider :: struct {}
+Sphere_Collider :: struct {
+        radius: f32,
+        mesh: Mesh
+}
+Plane_Collider :: struct {
+        normal: [3]f32,
+        binormal: [3]f32,
+        x: f32, // Along binormal
+        z: f32, // not along binormal
+}
+
+Box_Collider :: struct {}
+
 
 Shader_Options :: struct {
         pixel_format:                           MTL.PixelFormat,
@@ -258,9 +291,29 @@ Color_ID :: [3]u8
 
 Selectable :: union {
         ^Player,
-        ^Object
+        ^Object,
+        ^Enemy,
 }
 
 Render_Arguments :: struct {
         selected: i32,
+}
+
+World_Pos ::struct {
+        pos: [3]f32,
+        rot: quaternion128,
+        scale: f32,
+}
+
+Enemy :: struct {
+        model:      ^Model,
+	animator:   ^Animator,
+	animations: []Animation,
+	state:      Player_State,
+	transform:  matrix[4, 4]f32,
+        using world_pos: World_Pos,
+	speed:      f32,
+        collider:   Sphere_Collider,
+        velocity:   [3]f32,
+        on_ground:  bool,
 }

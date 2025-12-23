@@ -16,6 +16,8 @@ init_render_context :: proc(width, height: i32, label: string
 ) -> ^Render_Context
 {
 	rc := new(Render_Context)
+        rc.width = width
+        rc.height = height
 
 	glfw.Init()
 	glfw.WindowHint(glfw.CLIENT_API, glfw.NO_API)
@@ -132,7 +134,6 @@ render_mesh :: proc(
                         render_encoder->setFragmentTexture(texture.value, 1)
                 }
         }
-
         render_encoder->drawIndexedPrimitives(.Triangle, buf.index->length() / 4, .UInt32, buf.index, 0)
 }
 
@@ -203,6 +204,7 @@ render_model :: proc(
         model: ^Model,
         rc: ^Render_Context)
 {
+        rc.draw_stage.encoder->setVertexBuffer(buffer=model.transform_buffer, offset=0, index=7)
         for &mesh in model.meshes {
                 render_mesh(camera_buffer, light_buffer, mesh, rc.draw_stage.encoder, model.bone_buffer)
         }
@@ -312,6 +314,7 @@ write_model_to_shadow_map :: proc(
         model_transform: ^MTL.Buffer,
         shadow_map: Shadow_Map)
 {
+        
         rc.draw_stage.encoder->setVertexBuffer(buffer=shadow_map.transform, offset=0, index=5)
         rc.draw_stage.encoder->setVertexBuffer(buffer=model_transform, offset=0, index=4)
         rc.draw_stage.encoder->setVertexBuffer(buffer=model.bone_buffer, offset=0, index=3)
@@ -326,7 +329,7 @@ write_model_to_shadow_map :: proc(
 
 
 write_object_to_shadow_map :: proc(
-        object: ^Object,
+        object: Object,
         rc: ^Render_Context,
         shadow_map: Shadow_Map,
 )
@@ -367,7 +370,7 @@ write_model_to_color_id :: proc(model: ^Model, model_transform: ^MTL.Buffer, cam
         }
 }
 
-write_object_to_color_id :: proc(object: ^Object, camera_buffer: ^MTL.Buffer, rc: ^Render_Context)
+write_object_to_color_id :: proc(object: Object, camera_buffer: ^MTL.Buffer, rc: ^Render_Context)
 {
         transform_buffer := rc.device->newBuffer(size_of(matrix[4,4]f32), {.StorageModeManaged})
         transform_data := transform_buffer->contentsAsType(matrix[4,4]f32)

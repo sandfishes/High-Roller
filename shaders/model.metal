@@ -27,6 +27,10 @@ struct Light_Data {
         int n_lights;
 };
 
+struct Vertex_Transforms {
+        float4x4 transform;
+        float4x4 normal_transform;
+};
 
 v2f vertex vertex_main(
         device const packed_float3*     pos_data        [[buffer(0)]],
@@ -36,6 +40,7 @@ v2f vertex vertex_main(
         device const packed_float4*     bone_weight     [[buffer(4)]],
         device const float4x4*          bone_transforms [[buffer(5)]],
         device const Camera_Data&       camera_data     [[buffer(6)]],
+        device const Vertex_Transforms& transforms      [[buffer(7)]],
         uint vertex_id                                  [[vertex_id]])
 {
         v2f o;
@@ -61,9 +66,9 @@ v2f vertex vertex_main(
                         total_normal += bone_transforms[bone_ids[i]] * norm * bone_weights[i];
                 }
         }
-        o.position = camera_data.perspective_transform * camera_data.view_transform * camera_data.world_transform * total_position;
-        o.frag_pos = (camera_data.world_transform * total_position).xyz;
-        o.normal = normalize(camera_data.normal_transform * float4(total_normal.xyz, 0));
+        o.position = camera_data.perspective_transform * camera_data.view_transform * transforms.transform * total_position;
+        o.frag_pos = (transforms.transform * total_position).xyz;
+        o.normal = normalize(transforms.normal_transform * float4(total_normal.xyz, 0));
         o.color = half3(1,1,1);
         o.texcoord = float2(uv_data[vertex_id].xy);
         return o;

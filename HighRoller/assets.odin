@@ -1,5 +1,7 @@
 package HighRoller
 
+import "core:encoding/json"
+import "core:os/os2"
 import "core:fmt"
 import "core:math"
 import "core:strings"
@@ -9,7 +11,7 @@ import NS "core:sys/darwin/Foundation"
 import MTL "vendor:darwin/Metal"
 import CA "vendor:darwin/QuartzCore"
 import "core:math/rand"
-
+import "core:mem"
 //TODO bone_name might not be allocating correctly. Will need to check on this
 
 // a pointer to the render context is passed so we can add textures to the global register
@@ -28,10 +30,56 @@ load_model :: proc(path: string, rc: ^Render_Context
         model := new(Model)
         model.meshes = make([dynamic]Mesh)
         model.directory = directory
-        model.transform_buffer = rc.device->newBuffer(size_of(matrix[4,4]f32), {.StorageModeManaged})
-        model.transform_buffer->didModifyRange(NS.Range_Make(0, size_of(matrix[4,4]f32)))
+        model.transform_buffer = rc.device->newBuffer(size_of(Vertex_Transforms), {.StorageModeManaged})
+        model.transform_buffer->didModifyRange(NS.Range_Make(0, size_of(Vertex_Transforms)))
         process_ai_node(model, scene.mRootNode, scene, directory, rc)
         return model
+}
+
+
+
+load_mesh :: proc(path: string, rc:^Render_Context, idx: u32
+) -> (Mesh, bool)
+{
+                c_path := strings.clone_to_cstring(path)
+        defer delete(c_path)
+        scene: ^ai.Scene = ai.ImportFile(c_path, {.Triangulate})
+        if scene == nil || scene.mFlags == {.INCOMPLETE} || scene.mRootNode == nil {
+                fmt.println(ai.GetErrorString())
+                return Mesh{}, false
+        }
+        last_slash_idx := strings.last_index(path, "/")
+        directory := string(path[:last_slash_idx])
+        if idx > scene.mNumMeshes {
+                return Mesh{}, false
+        }
+        ai_mesh := scene.mMeshes[idx]
+        mesh := Mesh{}
+        mesh.vertices = make(#soa[dynamic]Mesh_Vertex)
+        for i in 0..<ai_mesh.mNumVertices {
+                vertex: Mesh_Vertex
+                vertex.pos = ai_mesh.mVertices[i]
+                vertex.norm = ai_mesh.mNormals[i]
+                if ai_mesh.mTextureCoords[0] != nil {
+                        vertex.uv = ai_mesh.mTextureCoords[0][i].xy
+                }
+                append_soa(&mesh.vertices, vertex)
+        }   
+        for i in 0..<ai_mesh.mNumFaces {
+                face: ai.Face = ai_mesh.mFaces[i]
+                for j in 0..<face.mNumIndices {
+                        append(&mesh.indices, i32(face.mIndices[j]))
+                }
+        }     
+        mesh.buffers = build_mesh_buffers(mesh.vertices, mesh.indices, rc)
+        return mesh, true
+}
+
+
+
+free_model :: proc(model: Model)
+{
+        unimplemented("Can't free models yet")
 }
 
 
@@ -478,9 +526,9 @@ load_ai_material_textures :: proc(material: ^ai.Material, type: ai.TextureType, 
 
 
 load_plane :: proc(textures: []^Texture, pos: [3]f32, rot: quaternion128, scale: f32, rc: ^Render_Context, double_sided := true
-) -> ^Object
+) -> Object
 {
-        plane := new(Object)
+        plane := Object{}
         plane.mesh.vertices = make(#soa[dynamic]Mesh_Vertex)
         append_soa(&plane.mesh.vertices,
         Mesh_Vertex{
@@ -529,5 +577,17 @@ load_plane :: proc(textures: []^Texture, pos: [3]f32, rot: quaternion128, scale:
         plane.transform = glm.mat4Translate(pos) * glm.mat4FromQuat(rot) * glm.mat4Scale(scale)
         plane.mesh.buffers = build_mesh_buffers(plane.mesh.vertices, plane.mesh.indices, rc)
         plane.color_id = Color_ID{u8(rand.int_max(255)), u8(rand.int_max(255)), u8(rand.int_max(255))}
+        plane.type = .Mesh
         return plane
+}
+
+
+free_object :: proc(object: ^Object, allo := context.allocator)
+{
+        free(object.collider, allo)
+        delete(object.mesh.indices) // No allocator passed since the array contains it's own reference. Good to know.
+        delete(object.mesh.textures) // The textures are owned by the render context, so don't need to free individually
+        delete(object.mesh.vertices)
+        free(object.mesh.buffers, allo)
+        free(object, allo)
 }

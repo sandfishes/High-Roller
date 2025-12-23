@@ -1,9 +1,9 @@
 #include <metal_stdlib>
 using namespace metal;
 
-struct Transform_Data {
-        float4x4 proj_from_world;
-        float4x4 world_from_obj;
+struct Vertex_Transforms {
+        float4x4 transform;
+        float4x4 normal_transform;
 };
 
 vertex float4 vertex_main(
@@ -11,7 +11,7 @@ vertex float4 vertex_main(
         device const int4*              bone_id         [[buffer(1)]],
         device const packed_float4*     bone_weight     [[buffer(2)]],
         device const float4x4*          bone_transforms [[buffer(3)]],
-        device const float4x4&          world_from_obj  [[buffer(4)]],
+        device const Vertex_Transforms& world_from_obj  [[buffer(4)]],
         device const float4x4&          proj_from_world [[buffer(5)]],
         uint                            id              [[vertex_id]])
 {
@@ -32,7 +32,7 @@ vertex float4 vertex_main(
                         total_position += bone_transforms[bone_ids[i]] * pos * bone_weights[i];
                 }
         }
-        return proj_from_world * world_from_obj * total_position;
+        return proj_from_world * world_from_obj.transform * total_position;
 }
 
 fragment void fragment_main() {}

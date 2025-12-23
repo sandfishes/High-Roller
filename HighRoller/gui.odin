@@ -36,12 +36,6 @@ init_gui :: proc(rc: ^Render_Context
 begin_gui_draw :: proc(rc: ^Render_Context
 )
 {
- //        depth_desc := MTL.DepthStencilDescriptor.alloc()->init()
- //        defer depth_desc->release()
-	// depth_desc->setDepthCompareFunction(.Less)
-	// depth_desc->setDepthWriteEnabled(true)
-	// depth_stencil_state := MTL.Device_newDepthStencilState(rc.device, depth_desc)
-
         rps := MTL.RenderPassDescriptor.alloc()->init()
 	rps->colorAttachments()->object(0)->setClearColor(MTL.ClearColor{ 0, 0, 0, 1 })
 	rps->colorAttachments()->object(0)->setTexture(rc.draw_stage.drawable->texture())

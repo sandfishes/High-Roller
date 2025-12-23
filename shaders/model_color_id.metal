@@ -9,12 +9,17 @@ struct Camera_Data {
         float3 pos;
 };
 
+struct Vertex_Transforms {
+        float4x4 transform;
+        float4x4 normal_transform;
+};
+
 vertex float4 vertex_main(
         device const packed_float3*     position        [[buffer(0)]],
         device const int4*              bone_id         [[buffer(1)]],
         device const packed_float4*     bone_weight     [[buffer(2)]],
         device const float4x4*          bone_transforms [[buffer(3)]],
-        device const float4x4&          world_from_obj  [[buffer(4)]],
+        device const Vertex_Transforms& world_from_obj  [[buffer(4)]],
         device const Camera_Data&       camera_data     [[buffer(5)]],
         uint                            id              [[vertex_id]])
 {
@@ -35,7 +40,7 @@ vertex float4 vertex_main(
                         total_position += bone_transforms[bone_ids[i]] * pos * bone_weights[i];
                 }
         }
-    return camera_data.perspective_transform * camera_data.view_transform * world_from_obj * total_position;
+    return camera_data.perspective_transform * camera_data.view_transform * world_from_obj.transform * total_position;
 }
 
 fragment float4 fragment_main(device const packed_float3& color_id [[buffer(0)]])

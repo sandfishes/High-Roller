@@ -19,7 +19,7 @@ key_callback :: proc "c" (
 		switch key {
 		case glfw.KEY_ESCAPE:
 			{
-				os.exit(1)
+				key_state.escape = true
 			}
 		case glfw.KEY_LEFT:
 			{
@@ -57,10 +57,18 @@ key_callback :: proc "c" (
                         {
                                 key_state.space = true
                         }
+                case glfw.KEY_LEFT_SHIFT:
+                        {
+                                key_state.shift = true
+                        }
                 } 
 	}
 	if action == glfw.RELEASE {
 		switch key {
+                case glfw.KEY_ESCAPE:
+                        {
+                                key_state.escape = false
+                        }
 		case glfw.KEY_LEFT:
 			{
 				key_state.left = false
@@ -97,6 +105,10 @@ key_callback :: proc "c" (
                         {
                                 key_state.space = false
                         }
+                case glfw.KEY_LEFT_SHIFT:
+                        {
+                                key_state.shift = false
+                        }
 		}
 	}
 }
@@ -112,6 +124,7 @@ cursor_pos_callback :: proc "c" (window: glfw.WindowHandle, x_pos: f64, y_pos: f
         key_state.y_offset = y_pos - key_state.mouse_pos.y
         key_state.mouse_pos.x = x_pos
         key_state.mouse_pos.y = y_pos
+        key_state.mouse_moved = true
 }
 
 
@@ -137,6 +150,8 @@ mouse_button_callback :: proc "c" (window: glfw.WindowHandle, button: i32, actio
 		case glfw.MOUSE_BUTTON_LEFT: 
                         {
                                 key_state.left_mouse_down = false
+                                key_state.can_select = true
+                                fmt.println("RELEASE")
                         }
                 case glfw.MOUSE_BUTTON_RIGHT: 
                         {
