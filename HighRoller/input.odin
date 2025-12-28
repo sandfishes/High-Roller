@@ -4,6 +4,10 @@ import "base:runtime"
 import "core:os"
 import "vendor:glfw"
 import "core:fmt"
+import NS "core:sys/darwin/Foundation"
+import MTL "vendor:darwin/Metal"
+import CA "vendor:darwin/QuartzCore"
+import glm "core:math/linalg/glsl"
 
 key_callback :: proc "c" (
 	window: glfw.WindowHandle,
@@ -13,7 +17,8 @@ key_callback :: proc "c" (
 	mods: i32,
 ) {
 	// Key state must be set as the window pointer
-	key_state: ^Key_State = cast(^Key_State)glfw.GetWindowUserPointer(window)
+	user_pointer: ^User_Pointer = cast(^User_Pointer)glfw.GetWindowUserPointer(window)
+        key_state := user_pointer.key_state
 	context = runtime.default_context()
 	if action == glfw.PRESS || action == glfw.REPEAT {
 		switch key {
@@ -117,7 +122,8 @@ key_callback :: proc "c" (
 
 cursor_pos_callback :: proc "c" (window: glfw.WindowHandle, x_pos: f64, y_pos: f64)
 {
-        key_state: ^Key_State = cast(^Key_State)glfw.GetWindowUserPointer(window)
+	user_pointer: ^User_Pointer = cast(^User_Pointer)glfw.GetWindowUserPointer(window)
+        key_state := user_pointer.key_state
         x_pos := f32(x_pos)
         y_pos := f32(y_pos)
         key_state.x_offset = x_pos - key_state.mouse_pos.x
@@ -131,7 +137,8 @@ cursor_pos_callback :: proc "c" (window: glfw.WindowHandle, x_pos: f64, y_pos: f
 
 mouse_button_callback :: proc "c" (window: glfw.WindowHandle, button: i32, action: i32, mods: i32)
 {
-	key_state: ^Key_State = cast(^Key_State)glfw.GetWindowUserPointer(window)
+	user_pointer: ^User_Pointer = cast(^User_Pointer)glfw.GetWindowUserPointer(window)
+        key_state := user_pointer.key_state
 	context = runtime.default_context()
 	if action == glfw.PRESS || action == glfw.REPEAT {
 		switch button {
@@ -161,3 +168,24 @@ mouse_button_callback :: proc "c" (window: glfw.WindowHandle, button: i32, actio
 	}
 }
 
+window_size_callback :: proc "c" (window: glfw.WindowHandle, width: i32, height: i32)
+{
+                context = runtime.default_context()
+
+        fmt.println(width, height)
+	user_pointer: ^User_Pointer = cast(^User_Pointer)glfw.GetWindowUserPointer(window)
+        rc := user_pointer.rc
+        scene := user_pointer.scene
+        rc.width = width
+        rc.height = height
+        rc.swapchain->setDrawableSize(NS.Size{NS.Float(width), NS.Float(height)})
+        glfw.SetWindowSize(rc.glfw_window, width, height)
+        scene.camera.perspective_transform = glm.mat4Perspective(glm.radians_f32(90), f32(rc.width)/f32(rc.height), CAMERA_NEAR, 2000)
+        rc.swapchain->setFrame(NS.Window_frame(rc.native_window))
+        main_screen := NS.Screen_mainScreen()
+        frame := main_screen->frame()
+        frame.width = NS.Float(width)
+        frame.height = NS.Float(height)
+        fmt.println(height)
+        rc.native_window->setFrame(frame, true)
+}

@@ -45,12 +45,11 @@ run_game :: proc() {
 	defer im.DestroyContext()
 
 	load_shaders(rc)
-	camera := init_camera(800, 600)
-	key_state := init_key_state(rc)
-        key_state.can_select = true
+	camera := init_camera(f32(rc.width), f32(rc.height))
 	player := create_player("../resources/models/voxel/Voxel character.fbx", "../resources/models/voxel/Voxel character.fbx", rc)
 	scene := init_scene(&camera, &player, rc)
-
+	key_state := init_key_state(rc, scene)
+        key_state.can_select = true
 
 	t: f64 = 0
 	for !glfw.WindowShouldClose(rc.glfw_window) {
@@ -81,18 +80,21 @@ init_camera :: proc(width, height: f32
 	camera := Camera{}
 	camera.pos = {-15, 5, 1}
 	camera.view_transform = glm.mat4LookAt(camera.pos, {0,0,0}, {0,1,0})
-        camera.perspective_transform = glm.mat4Perspective(glm.radians_f32(90), 800/600, CAMERA_NEAR, 2000)
-        serialize_camera(camera)
+        camera.perspective_transform = glm.mat4Perspective(glm.radians_f32(90), width/height, CAMERA_NEAR, 2000)
 	return camera
 }
 
 
 
-init_key_state :: proc(rc: ^Render_Context
+init_key_state :: proc(rc: ^Render_Context, scene: ^Scene
 ) -> ^Key_State
 {
 	key_state := new(Key_State)
-        glfw.SetWindowUserPointer(rc.glfw_window, rawptr(key_state))
+        user_pointer := new(User_Pointer)
+        user_pointer.key_state = key_state
+        user_pointer.rc = rc
+        user_pointer.scene = scene
+        glfw.SetWindowUserPointer(rc.glfw_window, rawptr(user_pointer))
         glfw.SetKeyCallback(rc.glfw_window, key_callback)
         glfw.SetCursorPosCallback(rc.glfw_window, cursor_pos_callback)
         glfw.SetMouseButtonCallback(rc.glfw_window, mouse_button_callback)
@@ -145,8 +147,8 @@ init_scene :: proc(camera: ^Camera, player: ^Player, rc: ^Render_Context
         // Make this match the dimensions of the screen. Can lower resolution but must have same aspect ratio
 	tex_desc := MTL.TextureDescriptor.texture2DDescriptorWithPixelFormat(
 		pixelFormat = .RGBA8Unorm,
-		width = NS.UInteger(800),
-		height = NS.UInteger(600),
+		width = NS.UInteger(rc.width),
+		height = NS.UInteger(rc.height),
 		mipmapped = false,
 	)
 	defer tex_desc->release()

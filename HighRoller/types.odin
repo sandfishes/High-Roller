@@ -317,3 +317,9 @@ Enemy :: struct {
         velocity:   [3]f32,
         on_ground:  bool,
 }
+
+User_Pointer :: struct {
+        key_state: ^Key_State,
+        rc:        ^Render_Context,
+        scene:     ^Scene,
+}

@@ -23,7 +23,7 @@ init_render_context :: proc(width, height: i32, label: string
 	glfw.WindowHint(glfw.CLIENT_API, glfw.NO_API)
 	glfw_window := glfw.CreateWindow(width, height, "High Roller", nil, nil)
 	native_window := glfw.GetCocoaWindow(glfw_window)
-
+        native_window->setStyleMask({.Resizable, .Titled})
 	title := NS.String_initWithOdinString(NS.String_alloc(), label)
 	defer title->release()
 	device := MTL.CreateSystemDefaultDevice()
@@ -33,7 +33,7 @@ init_render_context :: proc(width, height: i32, label: string
 	CA.MetalLayer_setFramebufferOnly(swapchain, true)
 	CA.MetalLayer_setFrame(swapchain, NS.Window_frame(native_window))
 
-	content_view := NS.Window_contentView(native_window)
+        content_view := NS.Window_contentView(native_window)
 	NS.View_setLayer(content_view, swapchain)
 
 	command_queue := MTL.Device_newCommandQueue(device)
