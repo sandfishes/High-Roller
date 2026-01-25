@@ -328,26 +328,26 @@ write_model_to_shadow_map :: proc(
 
 
 
-write_object_to_shadow_map :: proc(
-        object: Object,
-        rc: ^Render_Context,
-        shadow_map: Shadow_Map,
-)
-{
-        // TODO don't recompute the transform buffer
-        transform_buffer := rc.device->newBuffer(size_of(matrix[4,4]f32), {.StorageModeManaged})
-        transform_data := transform_buffer->contentsAsType(matrix[4,4]f32)
-        transform_data^ = object.transform
-        transform_buffer->didModifyRange(NS.Range_Make(0, size_of(matrix[4,4]f32)))
+// write_Object_to_shadow_map :: proc(
+//         object: Object,
+//         rc: ^Render_Context,
+//         shadow_map: Shadow_Map,
+// )
+// {
+//         // TODO don't recompute the transform buffer
+//         transform_buffer := rc.device->newBuffer(size_of(matrix[4,4]f32), {.StorageModeManaged})
+//         transform_data := transform_buffer->contentsAsType(matrix[4,4]f32)
+//         transform_data^ = object.transform
+//         transform_buffer->didModifyRange(NS.Range_Make(0, size_of(matrix[4,4]f32)))
 
-        rc.draw_stage.encoder->setVertexBuffer(buffer=shadow_map.transform, offset=0, index=3)
-        rc.draw_stage.encoder->setVertexBuffer(buffer=object.mesh.buffers.pos, offset=0, index=0)
-        rc.draw_stage.encoder->setVertexBuffer(buffer=transform_buffer, offset=0, index=4)
-        rc.draw_stage.encoder->setVertexBuffer(buffer=shadow_map.transform, offset=0, index=5)
-        rc.draw_stage.encoder->drawIndexedPrimitives(.Triangle, object.mesh.buffers.index->length()/4, .UInt32, object.mesh.buffers.index, 0)
+//         rc.draw_stage.encoder->setVertexBuffer(buffer=shadow_map.transform, offset=0, index=3)
+//         rc.draw_stage.encoder->setVertexBuffer(buffer=object.mesh.buffers.pos, offset=0, index=0)
+//         rc.draw_stage.encoder->setVertexBuffer(buffer=transform_buffer, offset=0, index=4)
+//         rc.draw_stage.encoder->setVertexBuffer(buffer=shadow_map.transform, offset=0, index=5)
+//         rc.draw_stage.encoder->drawIndexedPrimitives(.Triangle, object.mesh.buffers.index->length()/4, .UInt32, object.mesh.buffers.index, 0)
         
 
-}
+// }
 
 write_model_to_color_id :: proc(model: ^Model, model_transform: ^MTL.Buffer, camera_buffer: ^MTL.Buffer, rc: ^Render_Context)
 {
@@ -370,26 +370,26 @@ write_model_to_color_id :: proc(model: ^Model, model_transform: ^MTL.Buffer, cam
         }
 }
 
-write_object_to_color_id :: proc(object: Object, camera_buffer: ^MTL.Buffer, rc: ^Render_Context)
-{
-        transform_buffer := rc.device->newBuffer(size_of(matrix[4,4]f32), {.StorageModeManaged})
-        transform_data := transform_buffer->contentsAsType(matrix[4,4]f32)
-        transform_data^ = object.transform
-        transform_buffer->didModifyRange(NS.Range_Make(0, size_of(matrix[4,4]f32)))
-        defer transform_buffer->release()
+// write_object_to_color_id :: proc(object: Object, camera_buffer: ^MTL.Buffer, rc: ^Render_Context)
+// {
+//         transform_buffer := rc.device->newBuffer(size_of(matrix[4,4]f32), {.StorageModeManaged})
+//         transform_data := transform_buffer->contentsAsType(matrix[4,4]f32)
+//         transform_data^ = object.transform
+//         transform_buffer->didModifyRange(NS.Range_Make(0, size_of(matrix[4,4]f32)))
+//         defer transform_buffer->release()
 
-        color_buffer := rc.device->newBuffer(size_of([3]f32), {.StorageModeManaged})
-        color_data := color_buffer->contentsAsType([3]f32)
-        color_data^ = [3]f32{f32(object.color_id.x)/255, f32(object.color_id.y)/255, f32(object.color_id.z)/255}
-        color_buffer->didModifyRange(NS.Range_Make(0, size_of([3]f32)))
-        defer color_buffer->release()
+//         color_buffer := rc.device->newBuffer(size_of([3]f32), {.StorageModeManaged})
+//         color_data := color_buffer->contentsAsType([3]f32)
+//         color_data^ = [3]f32{f32(object.color_id.x)/255, f32(object.color_id.y)/255, f32(object.color_id.z)/255}
+//         color_buffer->didModifyRange(NS.Range_Make(0, size_of([3]f32)))
+//         defer color_buffer->release()
 
-        rc.draw_stage.encoder->setFragmentBuffer(buffer=color_buffer, offset=0, index=0)
-        rc.draw_stage.encoder->setVertexBuffer(buffer=camera_buffer, offset=0, index=1)
-        rc.draw_stage.encoder->setVertexBuffer(buffer=object.mesh.buffers.pos, offset=0, index=0)
-        rc.draw_stage.encoder->setVertexBuffer(buffer=transform_buffer, offset=0, index=4)
-        rc.draw_stage.encoder->drawIndexedPrimitives(.Triangle, object.mesh.buffers.index->length()/4, .UInt32, object.mesh.buffers.index, 0)
-}
+//         rc.draw_stage.encoder->setFragmentBuffer(buffer=color_buffer, offset=0, index=0)
+//         rc.draw_stage.encoder->setVertexBuffer(buffer=camera_buffer, offset=0, index=1)
+//         rc.draw_stage.encoder->setVertexBuffer(buffer=object.mesh.buffers.pos, offset=0, index=0)
+//         rc.draw_stage.encoder->setVertexBuffer(buffer=transform_buffer, offset=0, index=4)
+//         rc.draw_stage.encoder->drawIndexedPrimitives(.Triangle, object.mesh.buffers.index->length()/4, .UInt32, object.mesh.buffers.index, 0)
+// }
 
 build_light_buffers :: proc(lights: #soa[]Light, rc: ^Render_Context
 ) -> ^MTL.Buffer
@@ -452,4 +452,17 @@ clear_shadow_map :: proc(rc: ^Render_Context)
         // Private since we don't read or write to it on the cpu
         tex_desc->setStorageMode(.Private)
         rc.shadow_map.texture = rc.device->newTextureWithDescriptor(tex_desc)
+}
+
+render_hud :: proc(hud: HUD, rc: ^Render_Context) {
+        // The hud is basically a UI layout. 
+        // I could make it a texture, but then it will warp which is not ideal.
+        vert := CROSSHAIR_VERTICES * hud.crosshair_scale
+        indices := CROSSHAIR_INDICES
+        hud_buffer := rc.device->newBufferWithSlice(vert[:], {.StorageModeManaged})
+        hud_buffer->didModifyRange(NS.Range_Make(0, hud_buffer->length()))
+        index_buffer := rc.device->newBufferWithSlice(indices[:], {.StorageModeManaged}) 
+        index_buffer->didModifyRange(NS.Range_Make(0, index_buffer->length()))
+         rc.draw_stage.encoder->setVertexBuffer(buffer=hud_buffer, offset=0, index=0)
+        rc.draw_stage.encoder->drawIndexedPrimitives(.Triangle, index_buffer->length()/4, .UInt32, index_buffer, 0)
 }

@@ -170,22 +170,36 @@ mouse_button_callback :: proc "c" (window: glfw.WindowHandle, button: i32, actio
 
 window_size_callback :: proc "c" (window: glfw.WindowHandle, width: i32, height: i32)
 {
-                context = runtime.default_context()
-
-        fmt.println(width, height)
 	user_pointer: ^User_Pointer = cast(^User_Pointer)glfw.GetWindowUserPointer(window)
         rc := user_pointer.rc
         scene := user_pointer.scene
         rc.width = width
         rc.height = height
         rc.swapchain->setDrawableSize(NS.Size{NS.Float(width), NS.Float(height)})
-        glfw.SetWindowSize(rc.glfw_window, width, height)
+        // Update perspective to fit in new window
         scene.camera.perspective_transform = glm.mat4Perspective(glm.radians_f32(90), f32(rc.width)/f32(rc.height), CAMERA_NEAR, 2000)
-        rc.swapchain->setFrame(NS.Window_frame(rc.native_window))
-        main_screen := NS.Screen_mainScreen()
-        frame := main_screen->frame()
-        frame.width = NS.Float(width)
-        frame.height = NS.Float(height)
-        fmt.println(height)
-        rc.native_window->setFrame(frame, true)
+        // Rebuild the swapchain
+        rc.swapchain->release()
+        swapchain := CA.MetalLayer_layer()
+	CA.MetalLayer_setDevice(swapchain, rc.device)
+	CA.MetalLayer_setPixelFormat(swapchain, .RGBA8Unorm)
+	CA.MetalLayer_setFramebufferOnly(swapchain, true)
+	CA.MetalLayer_setFrame(swapchain, NS.Window_frame(rc.native_window))
+        content_view := NS.Window_contentView(rc.native_window)
+        // Set the new swapchain as the content view
+	NS.View_setLayer(content_view, swapchain)
+        rc.swapchain = swapchain
+
+        // Rebuild the depth texture
+        rc.depth_texture->release()
+	depth_desc := MTL.TextureDescriptor.texture2DDescriptorWithPixelFormat(
+		pixelFormat = .Depth16Unorm,
+		width = NS.UInteger(width),
+		height = NS.UInteger(height),
+		mipmapped = false,
+	)
+	depth_desc->setUsage({.RenderTarget})
+	depth_desc->setStorageMode(.Private)
+	rc.depth_texture = rc.device->newTextureWithDescriptor(depth_desc)
+        // TODO double clicking the title bar segfaults for some reason.
 }

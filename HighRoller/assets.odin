@@ -524,70 +524,7 @@ load_ai_material_textures :: proc(material: ^ai.Material, type: ai.TextureType, 
 }
 
 
-
-load_plane :: proc(textures: []^Texture, pos: [3]f32, rot: quaternion128, scale: f32, rc: ^Render_Context, double_sided := true
-) -> Object
+free_object :: proc(object: ^Entity, allo := context.allocator)
 {
-        plane := Object{}
-        plane.mesh.vertices = make(#soa[dynamic]Mesh_Vertex)
-        append_soa(&plane.mesh.vertices,
-        Mesh_Vertex{
-                pos = {-1, 0, -1}, // top left
-                norm = {0, 1, 0},
-                uv = {0, 0}
-        },Mesh_Vertex{
-                pos = {1, 0, -1}, // top right
-                norm = {0, 1, 0},
-                uv = {1, 0}
-        },Mesh_Vertex{
-                pos = {-1, 0, 1}, // bottom left
-                norm = {0, 1, 0},
-                uv = {0, 1}
-        },Mesh_Vertex{
-                pos = {1, 0, 1}, //bottom right
-                norm = {0, 1, 0},
-                uv = {1, 1}
-
-        },Mesh_Vertex{
-                pos = {-1, 0, -1}, // top left
-                norm = {0, -1, 0},
-                uv = {0, 0}
-        },Mesh_Vertex{
-                pos = {1, 0, -1}, // top right
-                norm = {0, -1, 0},
-                uv = {1, 0}
-        },Mesh_Vertex{
-                pos = {-1, 0, 1}, // bottom left
-                norm = {0, -1, 0},
-                uv = {0, 1}
-        },Mesh_Vertex{
-                pos = {1, 0, 1}, //bottom right
-                norm = {0, -1, 0},
-                uv = {1, 1}
-        })
-        plane.mesh.indices = make([dynamic]i32)
-        append(&plane.mesh.indices, 0, 2, 1, 3, 1, 2, 6, 5, 7, 5, 6, 4)
-        plane.mesh.textures = make([dynamic]^Texture)
-        for texture in textures {
-                append(&plane.mesh.textures, texture)
-        }
-        plane.pos = pos
-        plane.rot = rot
-        plane.scale = scale
-        plane.transform = glm.mat4Translate(pos) * glm.mat4FromQuat(rot) * glm.mat4Scale(scale)
-        plane.mesh.buffers = build_mesh_buffers(plane.mesh.vertices, plane.mesh.indices, rc)
-        plane.color_id = Color_ID{u8(rand.int_max(255)), u8(rand.int_max(255)), u8(rand.int_max(255))}
-        plane.type = .Mesh
-        return plane
-}
-
-
-free_object :: proc(object: ^Object, allo := context.allocator)
-{
-        free(object.collider, allo)
-        delete(object.mesh.indices) // No allocator passed since the array contains it's own reference. Good to know.
-        delete(object.mesh.textures) // The textures are owned by the render context, so don't need to free individually
-        delete(object.mesh.vertices)
-        free(object.mesh.buffers, allo)
-        free(object, allo)
+        entity_delete(object)
 }

@@ -15,6 +15,7 @@ import NS "core:sys/darwin/Foundation"
 import MTL "vendor:darwin/Metal"
 import CA "vendor:darwin/QuartzCore"
 import "vendor:glfw"
+import hm "handle_map"
 
 Render_Context :: struct {
 	device:        ^MTL.Device,
@@ -106,43 +107,15 @@ Mesh :: struct {
 	indices:   [dynamic]i32, // TODO is this required?
 }
 
-Object :: struct {
-        mesh: Mesh,
-        collider: ^Collider,
-        transform: matrix[4,4]f32,
-        using world_pos: World_Pos,
-        color_id: Color_ID,
-        type: Object_Type
-}
-
-Object_Type :: enum {
-        Collider,
-        Mesh,
-        Model,
-        Animated_Model,
-}
 // A model is just an object that has animation
 Model :: struct {
-	meshes:                 [dynamic]Mesh,
+	meshes:                 [dynamic]Mesh, // TODO doesn't need to be dynamic
 	directory:              string,
 	bone_infos:             map[string]Bone_Info,
 	bone_counter:           i32,
 	bone_buffer:            ^MTL.Buffer,
 	transform_buffer:       ^MTL.Buffer,
         color_id:               Color_ID
-}
-
-Player :: struct {
-	model:      ^Model,
-	animator:   ^Animator,
-	animations: []Animation,
-	state:      Player_State,
-	transform:  matrix[4, 4]f32,
-        using world_pos: World_Pos,
-	speed:      f32,
-        collider:   Sphere_Collider,
-        velocity:   [3]f32,
-        on_ground:  bool,
 }
 
 Bone_Info :: struct {
@@ -207,15 +180,17 @@ Light :: struct {
 
 Scene :: struct {
         camera:   ^Camera,
-	player:   ^Player,
-	enemies:  [dynamic]^Enemy,
-	objects:  [dynamic]Object,
+	player:   hm.Handle,
+	enemies:  [dynamic]hm.Handle,
+	objects:  [dynamic]hm.Handle,
 	lights:   #soa[dynamic]Light,
 	light_buffer: ^MTL.Buffer,
-        selected: Selectable,
+        selected: hm.Handle,
         color_id_texture: ^MTL.Texture,
-        color_id_map: map[Color_ID]Selectable,
+        color_id_map: map[Color_ID]hm.Handle,
+	entities: hm.Handle_Map(Entity, hm.Handle, 1000),
         edit: bool,
+	hud: HUD,
 }
 
 Collider :: union {
@@ -289,12 +264,6 @@ GUI :: struct {
 
 Color_ID :: [3]u8
 
-Selectable :: union {
-        ^Player,
-        ^Object,
-        ^Enemy,
-}
-
 Render_Arguments :: struct {
         selected: i32,
 }
@@ -305,21 +274,41 @@ World_Pos ::struct {
         scale: f32,
 }
 
-Enemy :: struct {
-        model:      ^Model,
-	animator:   ^Animator,
-	animations: []Animation,
-	state:      Player_State,
-	transform:  matrix[4, 4]f32,
-        using world_pos: World_Pos,
-	speed:      f32,
-        collider:   Sphere_Collider,
-        velocity:   [3]f32,
-        on_ground:  bool,
-}
-
 User_Pointer :: struct {
         key_state: ^Key_State,
         rc:        ^Render_Context,
         scene:     ^Scene,
 }
+
+HUD :: struct {
+	active: bool,
+	health: int,
+	crosshair_scale: f32,
+}
+
+Entity_State :: union {
+	Player_State,
+}
+
+Entity_Type :: enum {
+	Enemy,
+	Player,
+	Object,
+	Collider,
+}
+
+Entity :: struct {
+	type: 	    Entity_Type,
+	model:      ^Model,
+	animator:   ^Animator,
+	animations: []Animation,
+	state:      Entity_State,
+	transform:  matrix[4, 4]f32,
+        using world_pos: World_Pos,
+	speed:      f32,
+        collider:   Collider,
+        velocity:   [3]f32,
+        on_ground:  bool,
+	handle:     hm.Handle,
+}
+

@@ -5,16 +5,16 @@ import "core:fmt"
 import "core:bytes"
 import "core:strconv"
 import "core:strings"
-
+import hm "handle_map"
 serialize_scene :: proc(scene:  ^Scene
 ) -> json.Object
 {
         cam_obj := serialize_camera(scene.camera^)
-        player := serialize_player(scene.player^)
+        player := serialize_player(hm.get(scene.entities, scene.player))
         return cam_obj
 }
 
-serialize_player :: proc(player: Player
+serialize_player :: proc(player: Entity
 ) -> json.Object
 {
         out := make(json.Object)

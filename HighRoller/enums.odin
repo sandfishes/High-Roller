@@ -13,6 +13,7 @@ Winding_Order :: enum {
 Player_State :: enum u32 {
         WALKING = 5,
         STANDING = 2,
+        DEAD = 9
 }
 
 Light_Type :: enum {
@@ -22,6 +23,7 @@ Light_Type :: enum {
 
 MODEL_SHADER := "MODEL_SHADER"
 MESH_SHADER := "MESH_SHADER"
+HUD_SHADER := "HUD_SHADER"
 MODEL_SHADOW_SHADER := "MODEL_SHADOW_SHADER"
 MESH_SHADOW_SHADER := "MESH_SHADOW_SHADER"
 MESH_COLOR_ID_SHADER := "MESH_COLOR_ID_SHADER"
